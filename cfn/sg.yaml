@@ -1,0 +1,86 @@
+---
+# Cloudformation template for security groups
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Template to create notejam's security groups
+
+Parameters:
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+    Default: notejam
+
+Resources:
+  PresentationELBSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Presentation layer ELB SG, takes http/https traffic from IGW
+      SecurityGroupIngress:
+        - { IpProtocol: "tcp", FromPort: 80, ToPort: 80, CidrIp: "0.0.0.0/0" }
+        - { IpProtocol: "tcp", FromPort: 443, ToPort: 443, CidrIp: "0.0.0.0/0" }
+      VpcId: { "Fn::ImportValue": !Sub "${EnvironmentName}-VPC" }
+      Tags:
+        - Key: Name
+          Value: PresentationELBSG
+
+  BastionSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Bastion security group
+      SecurityGroupIngress:
+        - { IpProtocol: "tcp", FromPort: 22, ToPort: 22, CidrIp: "0.0.0.0/0" }
+      VpcId: { "Fn::ImportValue": !Sub "${EnvironmentName}-VPC" }
+      Tags:
+        - Key: Name
+          Value: BastionSG
+
+  AppSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: App tier SG
+      SecurityGroupIngress:
+        # Tomcat listens on 8080 and 8443, not sure how the from/to works
+        - { IpProtocol: "tcp", FromPort: 80, ToPort: 80, SourceSecurityGroupId: !Ref PresentationELBSG }
+        - { IpProtocol: "tcp", FromPort: 443, ToPort: 443, SourceSecurityGroupId: !Ref PresentationELBSG }
+        - { IpProtocol: "tcp", FromPort: 8080, ToPort: 8080, SourceSecurityGroupId: !Ref PresentationELBSG }
+        - { IpProtocol: "tcp", FromPort: 8443, ToPort: 8443, SourceSecurityGroupId: !Ref PresentationELBSG }
+        - { IpProtocol: "tcp", FromPort: 22, ToPort: 22, SourceSecurityGroupId: !Ref BastionSG }
+      VpcId: { "Fn::ImportValue": !Sub "${EnvironmentName}-VPC" }
+      Tags:
+        - Key: Name
+          Value: AppSG
+
+  DataBaseSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: DataBase tier SG
+      SecurityGroupIngress:
+        - { IpProtocol: "tcp", FromPort: 3306, ToPort: 3306, SourceSecurityGroupId: !Ref AppSG }
+      VpcId: { "Fn::ImportValue": !Sub "${EnvironmentName}-VPC" }
+      Tags:
+        - Key: Name
+          Value: DataBaseSG
+
+Outputs:
+  PresentationELBSG:
+    Description: PresentationELBSG
+    Value: !Ref PresentationELBSG
+    Export:
+      Name: !Sub ${EnvironmentName}-PresentationELBSG
+
+  BastionSG:
+    Description: BastionSG
+    Value: !Ref BastionSG
+    Export:
+      Name: !Sub ${EnvironmentName}-BastionSG
+
+  AppSG:
+    Description: AppSG
+    Value: !Ref AppSG
+    Export:
+      Name: !Sub ${EnvironmentName}-AppSG
+
+  DataBaseSG:
+    Description: DataBaseSG
+    Value: !Ref DataBaseSG
+    Export:
+      Name: !Sub ${EnvironmentName}-DataBaseSG
