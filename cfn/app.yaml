@@ -52,7 +52,7 @@ Resources:
       HealthCheck:
         HealthyThreshold: 2
         Interval: 30
-        Target: "HTTP:80/"
+        Target: "TCP:80"
         Timeout: 5
         UnhealthyThreshold: 3
       SecurityGroups:
@@ -60,56 +60,49 @@ Resources:
 
   AppLaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
-    # Metadata:
-    #   AWS::CloudFormation::Init:
-    #     configSets:
-    #       InstallAndRun:
-    #         - install-requirements
-    #         - upload-files
-    #     install-requirements:
-    #       files:
-    #         /var/www/html/flask.zip:
-    #           source: https://nordcloud-notejam.s3.ca-central-1.amazonaws.com/flask.zip
-    #           mode: 000400
-    #           owner: root
-    #       commands:
-    #         00-unzip:
-    #           command: "unzip flask.zip"
-    #           cwd: "/var/www/html/"
-    #         01-install-requirements:
-    #           command: "pip install -r requirements.txt"
-    #           cwd: "/var/www/html/flask/"
-    #         02-make-dir-sites-avail:
-    #           command: "mkdir /etc/nginx/sites-available/"
-    #         03-make-dir-sites-enable:
-    #           command: "mkdir /etc/nginx/sites-enabled"
-            # 02-create-database-schema:
-            #   command: "python db.py"
-            #   cwd: "/var/www/html/flask/"
-            # 03-start-flask-web-server:
-            #   command: "python runserver.py"
-            #   cwd: "/var/www/html/flask/"
-        # upload-files:
-        #   files:
-        #     /etc/systemd/system/runserver.service:
-        #       source: https://nordcloud-notejam.s3.ca-central-1.amazonaws.com/runserver.service
-        #       mode: 00400
-        #       owner: root
-        #     /etc/nginx/sites-available/runserver:
-        #       source: https://nordcloud-notejam.s3.ca-central-1.amazonaws.com/runserver
-        #       mode: 00400
-        #       owner: root
-        #   commands:
-        #     01-start-gunicorn-service:
-        #       command: "echo here we goooooo" #"systemctl start runserver"
-            # 02-enable-gunicorn-service:
-            #   command: "systemctl enable runserver"
-            # 03-enable-nginx-server-block:
-            #   command: "ln -s /etc/nginx/sites-available/runserver /etc/nginx/sites-enabled/runserver"
-            # 04-restart-nginx:
-            #   command: "systemctl restart nginx"
-            # 05-adjust-firewall:
-            #   command: "ufw allow 'Nginx Full'"
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          InstallAndRun:
+            - install-requirements
+            - run-httpd
+        install-requirements:
+          packages:
+            yum:
+              git: []
+              httpd: []
+              mod_wsgi: []
+          commands:
+            00-yum-update:
+              command: "yum -y update"
+            01-install-epel:
+              command: "amazon-linux-extras install epel"
+            02-start-httpd:
+              command: "service httpd start"
+            03-clone-notejam:
+              command: "git clone https://github.com/nordcloud/notejam.git /var/www/html"
+            04-install-requirements:
+              command: "pip install -r /var/www/html/flask/requirements.txt"
+            05-create-database-schema:
+              command: "python db.py"
+              cwd: "/var/www/html/flask/"
+            06-restart-httpd:
+              command: "service httpd restart"
+        run-httpd:
+          files:
+            /var/www/html/flask/wsgi.py:
+              source: https://nordcloud-notejam.s3.ca-central-1.amazonaws.com/wsgi.py
+              mode: "000755"
+              owner: apache
+            /etc/httpd/conf/httpd.conf:
+              source: https://nordcloud-notejam.s3.ca-central-1.amazonaws.com/httpd.conf
+              mode: "000755"
+              owner: apache
+          commands:
+            01-set-owners:
+              command: "chown -R apache:apache /var/www/html"
+            02-start-httpd:
+              command: "service httpd restart"
     Properties:
       SecurityGroups:
         - { "Fn::ImportValue": !Sub "${EnvironmentName}-AppSG" }
@@ -117,95 +110,20 @@ Resources:
       ImageId: !Ref AmiType
       KeyName: !Ref SSHKey
       UserData:
-        !Base64 |
-        #!/bin/bash -xe
-        yum -y update
-        amazon-linux-extras install epel
-        yum install -y git
-        yum install -y httpd
-        service httpd start
-        yum install -y mod_wsgi
-        yum install -y python-pip
-        pip install virtualenv
-
-        git clone https://github.com/nordcloud/notejam.git /var/www/html
-
-        chown -R root:root /var/www/html
-
-        # cd /var/www/html/ && \
-        # virtualenv --python=python3.0 flask && \
-        # cd /var/www/html/flask && \
-        # source bin/activate && \
-        pip install -r requirements.txt
-
-
-        echo 'import sys' >> /var/www/html/flask/wsgi.py
-        echo 'import site' >> /var/www/html/flask/wsgi.py
-        echo 'site.addsitedir("/usr/lib/python2.7/site-packages")' >> /var/www/html/flask/wsgi.py
-        echo 'sys.path.insert(0, "/var/www/html/flask")' >> /var/www/html/flask/wsgi.py
-        echo 'from notejam import app as application' >> /var/www/html/flask/wsgi.py
-        echo 'application.root_path = "/var/www/html/flask"' >> /var/www/html/flask/wsgi.py
-
-
-        echo '<VirtualHost *:80>' >> /etc/httpd/conf/httpd.conf
-        echo '       ServerName '$(hostname) >> /etc/httpd/conf/httpd.conf
-        echo '       WSGIDaemonProcess flask user=root group=root threads=5' >> /etc/httpd/conf/httpd.conf
-        echo '       WSGIScriptAlias / /var/www/html/flask/wsgi.py' >> /etc/httpd/conf/httpd.conf
-        echo '       <Directory /var/www/html/flask/>' >> /etc/httpd/conf/httpd.conf
-        echo '            WSGIProcessGroup flask'  >> /etc/httpd/conf/httpd.conf
-        echo '            WSGIApplicationGroup %{GLOBAL}'  >> /etc/httpd/conf/httpd.conf
-        echo '            Order allow,deny'  >> /etc/httpd/conf/httpd.conf
-        echo '            Allow from all'  >> /etc/httpd/conf/httpd.conf
-        echo '       </Directory>' >> /etc/httpd/conf/httpd.conf
-        echo '       Alias "/static/" "/var/www/html/flask/notejam/static/"' >> /etc/httpd/conf/httpd.conf
-        echo '       <Directory /var/www/html/flask/notejam/static/>' >> /etc/httpd/conf/httpd.conf
-        echo '            Order allow,deny' >> /etc/httpd/conf/httpd.conf
-        echo '            Allow from all' >> /etc/httpd/conf/httpd.conf
-        echo '       </Directory>' >> /etc/httpd/conf/httpd.conf
-        echo '</VirtualHost>' >> /etc/httpd/conf/httpd.conf
-
-        systemctl restart httpd
-        # systemctl restart httpd
-        # 'Fn::Join':
-        #   - ''
-        #   - - |
-        #       #!/bin/bash -xe
-        #     - |
-        #     - 'yum update -y'
-        #     - |+
-        #
-        #     - |
-        #     - 'yum install -y python-pip'
-        #     - |+
-        #
-        #     - |
-        #     - 'amazon-linux-extras install -y nginx1'
-        #     - |+
-        #
-        #     - |
-        #     - '/opt/aws/bin/cfn-init -v '
-        #     - '         --stack '
-        #     - !Ref 'AWS::StackName'
-        #     - '         --resource AppLaunchConfiguration '
-        #     - '         --configsets InstallAndRun '
-        #     - '         --region '
-        #     - !Ref 'AWS::Region'
-        #     - |+
-        #
-        #     - |
-        #     - '/opt/aws/bin/cfn-signal -e $? '
-        #     - '         --stack '
-        #     - !Ref 'AWS::StackName'
-        #     - '         --resource AppASG '
-        #     - '         --region '
-        #     - !Ref 'AWS::Region'
-        #     - |+
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            yum update -y aws-cfn-bootstrap
+            yum install -y python-pip
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource AppLaunchConfiguration --configsets InstallAndRun --region ${AWS::Region}
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource AppASG --region ${AWS::Region}
 
   AppASG:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       LaunchConfigurationName: !Ref AppLaunchConfiguration
-      MinSize: 2
+      DesiredCapacity: 1
+      MinSize: 1
       MaxSize: 4
       AvailabilityZones:
         - { "Fn::ImportValue": !Sub "${EnvironmentName}-AvailabilityZone1" }

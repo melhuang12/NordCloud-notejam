@@ -39,9 +39,8 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       LaunchConfigurationName: !Ref BastionLaunchConfiguration
-      MinSize: 2
-      MaxSize: 4
+      MinSize: 1
+      MaxSize: 2
       VPCZoneIdentifier:
         - { "Fn::ImportValue": !Sub "${EnvironmentName}-PublicSubnet1" }
         - { "Fn::ImportValue": !Sub "${EnvironmentName}-PublicSubnet2" }
-        
