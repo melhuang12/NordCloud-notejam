@@ -130,28 +130,37 @@ Resources:
 
         git clone https://github.com/nordcloud/notejam.git /var/www/html
 
-        chown -R apache:apache /var/www/html
+        chown -R root:root /var/www/html
 
-        cd /var/www/html/ && \
-        virtualenv --python=python3.0 flask && \
-        cd /var/www/html/flask && \
-        source bin/activate && \
+        # cd /var/www/html/ && \
+        # virtualenv --python=python3.0 flask && \
+        # cd /var/www/html/flask && \
+        # source bin/activate && \
         pip install -r requirements.txt
 
 
         echo 'import sys' >> /var/www/html/flask/wsgi.py
         echo 'import site' >> /var/www/html/flask/wsgi.py
-        echo 'site.addsitedir("/var/www/html/flask/lib/python2.7/site-packages")' >> /var/www/html/flask/wsgi.py
+        echo 'site.addsitedir("/usr/lib/python2.7/site-packages")' >> /var/www/html/flask/wsgi.py
         echo 'sys.path.insert(0, "/var/www/html/flask")' >> /var/www/html/flask/wsgi.py
         echo 'from notejam import app as application' >> /var/www/html/flask/wsgi.py
+        echo 'application.root_path = "/var/www/html/flask"' >> /var/www/html/flask/wsgi.py
 
 
         echo '<VirtualHost *:80>' >> /etc/httpd/conf/httpd.conf
         echo '       ServerName '$(hostname) >> /etc/httpd/conf/httpd.conf
-        echo '       WSGIDaemonProcess flask user=apache group=apache threads=2' >> /etc/httpd/conf/httpd.conf
+        echo '       WSGIDaemonProcess flask user=root group=root threads=5' >> /etc/httpd/conf/httpd.conf
         echo '       WSGIScriptAlias / /var/www/html/flask/wsgi.py' >> /etc/httpd/conf/httpd.conf
         echo '       <Directory /var/www/html/flask/>' >> /etc/httpd/conf/httpd.conf
-        echo '            Require all granted'  >> /etc/httpd/conf/httpd.conf
+        echo '            WSGIProcessGroup flask'  >> /etc/httpd/conf/httpd.conf
+        echo '            WSGIApplicationGroup %{GLOBAL}'  >> /etc/httpd/conf/httpd.conf
+        echo '            Order allow,deny'  >> /etc/httpd/conf/httpd.conf
+        echo '            Allow from all'  >> /etc/httpd/conf/httpd.conf
+        echo '       </Directory>' >> /etc/httpd/conf/httpd.conf
+        echo '       Alias "/static/" "/var/www/html/flask/notejam/static/"' >> /etc/httpd/conf/httpd.conf
+        echo '       <Directory /var/www/html/flask/notejam/static/>' >> /etc/httpd/conf/httpd.conf
+        echo '            Order allow,deny' >> /etc/httpd/conf/httpd.conf
+        echo '            Allow from all' >> /etc/httpd/conf/httpd.conf
         echo '       </Directory>' >> /etc/httpd/conf/httpd.conf
         echo '</VirtualHost>' >> /etc/httpd/conf/httpd.conf
 
