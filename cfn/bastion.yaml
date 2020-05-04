@@ -1,7 +1,7 @@
 ---
-# Cloudformation template for ec2 instances on app tier in an ASG group
+# Cloudformation template for Bastion hosts
 AWSTemplateFormatVersion: "2010-09-09"
-Description: This template deploys notejam's app/db/presentation tier
+Description: This template deploys notejam's bastion hosts
 
 Parameters:
   EnvironmentName:
