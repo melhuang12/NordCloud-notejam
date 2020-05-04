@@ -1,1 +1,1 @@
-# NordCloud-notejam
+# Notejam On AWS
